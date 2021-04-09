@@ -280,3 +280,195 @@ Interestingly it doesn't work if the steps array is too big. This is because i'v
 # Dynamic Classes
 
 One for another day.
+
+
+
+# LED Cube
+
+Its a strip of 512 WS2812B LEDs arranged into an 8x8x8 cube!
+
+It can be setup with:
+
+```c
+#include<FastLED.h>
+#define LED_PIN     2
+#define BRIGHTNESS  32
+#define LED_TYPE    WS2812B
+#define COLOR_ORDER GRB
+const uint8_t kCubeSize = 8;
+#define NUM_LEDS (kCubeSize * kCubeSize * kCubeSize)
+#define MAX_DIMENSION kCubeSize
+
+CRGB leds[NUM_LEDS];
+
+void setup() {
+  FastLED.addLeds<LED_TYPE,LED_PIN,COLOR_ORDER>(leds,NUM_LEDS);
+}
+```
+
+This code can run onan arduino uno plugged into the cube, controoled the LEDs through Pin2. Thius does have power limitations and can brownout the arduino if too many LEDs are used at once.
+
+Alternatively it can be controlled by a Spark Core or Particle Photon (without power issues) but programming these is different. it's done throuh the webIDE at particle and requires a slightly differnt preamble in the code:
+
+```c
+#include <FastLED.h>
+FASTLED_USING_NAMESPACE
+void setup() {
+  FastLED.addLeds<WS2812B,D0,GRB>(la,512); // Spark Core option
+}
+```
+
+
+
+I suggest prototyping on arduino then moving over to spark.
+
+Individual LEDs can be addressed thus:
+
+```c
+int index=((z*64)+(x*8)+y;
+leds[index].setRGB( 255, 255, 255); // set LED
+```
+
+## Anti-aliasing
+
+[This code](https://pastebin.com/yAgKs0Ay) demonstrates how to do it.
+
+## Putting it all Together
+
+with a few lines it's relatively easy to make a 8x8x8 animation.
+
+```c
+#include<FastLED.h>
+
+#define LED_PIN     2
+#define LED_TYPE    WS2812B
+#define COLOR_ORDER GRB
+
+const uint8_t kCubeSize = 8;
+#define NUM_LEDS (kCubeSize * kCubeSize * kCubeSize)
+#define MAX_DIMENSION kCubeSize
+
+CRGB leds[NUM_LEDS];
+
+unsigned char Mask[]= {0xFC, 0xC6, 0xC6, 0xFC, 0xC6, 0xC6, 0xFC, 0x00,
+                       0x7C, 0xC6, 0xC6, 0xC6, 0xC6, 0xC6, 0x7C, 0x00,
+                       0x7C, 0xC6, 0xC6, 0xC6, 0xC6, 0xC6, 0x7C, 0x00,
+                       0xFC, 0xC6, 0xC6, 0xFC, 0xC6, 0xC6, 0xFC, 0x00,
+                       0x7E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x7E, 0x00,
+                       0xFE, 0xC0, 0xC0, 0xF8, 0xC0, 0xC0, 0xFE, 0x00,
+                       0x7C, 0xC6, 0xC0, 0x7C, 0x06, 0xC6, 0x7C, 0x00};
+
+int z16index=0;
+int hue8=0;
+int lcount=0;
+
+void setup() {
+  delay(3000);
+  FastLED.addLeds<LED_TYPE,LED_PIN,COLOR_ORDER>(leds,NUM_LEDS);
+}
+
+void loop() {
+  sl2(Mask);
+}
+
+
+void sl2(unsigned char *P) {
+  int lz=z16index;
+  int z=lz/16;
+  uint8_t frac = lz&0x0F;
+  uint8_t fb = (255-(frac*16))/2;
+  uint8_t sb = (128-fb);
+  z16index+=1;
+  if(z16index>=(8*16)) {
+    z16index=0;
+    lcount++;
+    if(lcount>6) {
+      lcount=0;
+    }
+  }
+  hue8++;
+  if(hue8>2048) {
+    hue8=0;
+  }
+  int hue=hue8/4;
+   
+  for(int y=0; y<8; y++) {
+    unsigned char l = *(P+8*lcount+y);
+    for(int x=0; x<8; x++) {
+      int v=(l>>x)&0x01;
+      if(v==1) {
+        int index=((7-z)*64)+((7-x)*8)+(7-y);
+        leds[index].setHSV( hue/*lz*2*/, 255, fb); // set LED
+
+        if(z<7) {
+          index=((7-z-1)*64)+((7-x)*8)+(7-y);
+          leds[index].setHSV( hue/*lz*2*/, 255, 128); // set LED
+        }
+        
+        if(z<6) {
+          index=((7-z-2)*64)+((7-x)*8)+(7-y);
+          leds[index].setHSV( hue/*lz*2*/, 255, sb); // set LED
+        }
+      }
+    }
+  }   
+  FastLED.show(); // update strip
+  for (int y=0; y<8; y++) {
+    for(int x=0; x<8; x++) {
+      int index=((7-z)*64)+((7-x)*8)+(7-y);
+        leds[index].setRGB( 0, 0, 0); // set LED
+      }
+   } 
+} 
+```
+
+or, slightly less readable:
+
+```c
+#include<FastLED.h>
+
+CRGB la[512];
+int z16,h8,lc=0;
+unsigned char Mask[]= {0xFC, 0xC6, 0xC6, 0xFC, 0xC6, 0xC6, 0xFC, 0x00,
+                       0x7C, 0xC6, 0xC6, 0xC6, 0xC6, 0xC6, 0x7C, 0x00,
+                       0x7C, 0xC6, 0xC6, 0xC6, 0xC6, 0xC6, 0x7C, 0x00,
+                       0xFC, 0xC6, 0xC6, 0xFC, 0xC6, 0xC6, 0xFC, 0x00,
+                       0x7E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x7E, 0x00,
+                       0xFE, 0xC0, 0xC0, 0xF8, 0xC0, 0xC0, 0xFE, 0x00,
+                       0x7C, 0xC6, 0xC0, 0x7C, 0x06, 0xC6, 0x7C, 0x00};
+void setup() {
+  delay(1000);
+  FastLED.addLeds<WS2812B,2,GRB>(la,512); // Uno
+}
+
+void loop() {
+  sl2(Mask);
+}
+
+void sl2(unsigned char *P) {
+  uint8_t z=z16>>4;
+  uint8_t zf=z16++&0x0F;
+  uint8_t fb=128-(zf*8+8);
+  uint8_t sb=128-fb;
+  uint8_t h=h8>>2;
+  uint8_t x,y=0;
+  ++h8%2^11;
+  if(z16>=128) {
+    z16=0;
+    ++lc%=7;
+  }
+  for(y=0; y<8; y++) {
+    for(x=0; x<8; x++) {
+      if((*(P+8*lc+y)>>x)&0x01) {
+        la[((7-z)*64)+((7-x)*8)+(7-y)].setHSV( h, 255, fb); 
+        z<7 && la[((7-z-1)*64)+((7-x)*8)+(7-y)].setHSV( h, 255, 128); // extra girth
+        z<6 && la[((7-z-2)*64)+((7-x)*8)+(7-y)].setHSV( h, 255, sb); 
+      }
+    }
+  }   
+  FastLED.show();
+} 
+```
+
+
+
